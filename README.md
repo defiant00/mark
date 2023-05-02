@@ -5,8 +5,6 @@
 * `*` unordered list
 * `n.` ordered list
 * `---` divider
-* `` `code` `` inline code
-* ` ```code``` ` code block
 * `# text` to `##### text` heading
 * `> text` quote
 * `[ ]` unchecked check box
@@ -17,3 +15,17 @@
 * image
 * anchor
 * table
+
+```
+code
+
+as many ` as you want surrounding code
+newlines determine if it's a block or inline
+optional type, `type:code`
+
+`csharp:
+code
+`
+
+`js:let x = 7;`
+```
