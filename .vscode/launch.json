@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "html current",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "zig build run -- html ${file}",
+            "args": []
+        },
+        {
+            "name": "html test-1",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "zig build run -- html examples/test-1.mark",
+            "args": []
+        }
+    ]
+}

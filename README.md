@@ -1,5 +1,7 @@
 # mark
 
+Implemented in [Zig](https://ziglang.org/), last compiled with 0.11.0-dev.2868+1a455b2dd.
+
 * `*text*` **bold**
 * `_text_` _italics_
 * `*` unordered list
