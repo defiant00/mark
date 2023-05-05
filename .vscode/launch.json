@@ -2,17 +2,17 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "html current",
+            "name": "current",
             "type": "PowerShell",
             "request": "launch",
-            "script": "zig build run -- html ${file}",
+            "script": "zig build; Get-Content -Path ${file} | zig-out/bin/mark.exe",
             "args": []
         },
         {
-            "name": "html test-1",
+            "name": "test 1",
             "type": "PowerShell",
             "request": "launch",
-            "script": "zig build run -- html examples/test-1.mark",
+            "script": "zig build; Get-Content -Path examples/test-1.mark | zig-out/bin/mark.exe",
             "args": []
         }
     ]
