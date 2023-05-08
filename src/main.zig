@@ -1,7 +1,4 @@
-const builtin = @import("builtin");
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-
 const Converter = @import("converter.zig").Converter;
 
 const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 3 };

@@ -1,6 +1,5 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-
 const StringBuilder = @import("string_builder.zig").StringBuilder;
 
 pub const Converter = struct {

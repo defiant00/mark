@@ -21,7 +21,6 @@ pub const StringBuilder = struct {
     };
 
     allocator: Allocator,
-
     first: ?*Item,
     last: ?*Item,
 
