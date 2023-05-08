@@ -4,13 +4,9 @@ const Allocator = std.mem.Allocator;
 
 const Converter = @import("converter.zig").Converter;
 
-const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 2 };
+const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 3 };
 
 pub fn main() !void {
-    if (builtin.os.tag == .windows) {
-        _ = std.os.windows.kernel32.SetConsoleOutputCP(65001); // utf-8
-    }
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var alloc = gpa.allocator();
 

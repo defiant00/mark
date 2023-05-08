@@ -5,14 +5,14 @@
             "name": "current",
             "type": "PowerShell",
             "request": "launch",
-            "script": "zig build; Get-Content ${file} | zig-out/bin/mark.exe",
+            "script": "$prev = [Console]::OutputEncoding; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); zig build; Get-Content ${file} | zig-out/bin/mark.exe; [Console]::OutputEncoding = $prev",
             "args": []
         },
         {
             "name": "test 1",
             "type": "PowerShell",
             "request": "launch",
-            "script": "zig build; Get-Content examples/test-1.mark | zig-out/bin/mark.exe",
+            "script": "$prev = [Console]::OutputEncoding; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); zig build; Get-Content examples/test-1.mark | zig-out/bin/mark.exe; [Console]::OutputEncoding = $prev",
             "args": []
         }
     ]
