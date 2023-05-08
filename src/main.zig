@@ -2,7 +2,9 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 1 };
+const Converter = @import("converter.zig").Converter;
+
+const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 2 };
 
 pub fn main() !void {
     if (builtin.os.tag == .windows) {
@@ -25,9 +27,8 @@ pub fn main() !void {
         var buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
         const stdout = buffered_writer.writer();
 
-        // todo - convert
+        try Converter.convertAll(alloc, source, stdout);
 
-        try stdout.writeAll(source);
         try buffered_writer.flush();
     } else if (args.len == 2 and std.mem.eql(u8, args[1], "help")) {
         printUsage();
