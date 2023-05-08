@@ -5,14 +5,14 @@
             "name": "current",
             "type": "PowerShell",
             "request": "launch",
-            "script": "zig build; Get-Content -Path ${file} | zig-out/bin/mark.exe",
+            "script": "zig build; Get-Content ${file} | zig-out/bin/mark.exe",
             "args": []
         },
         {
             "name": "test 1",
             "type": "PowerShell",
             "request": "launch",
-            "script": "zig build; Get-Content -Path examples/test-1.mark | zig-out/bin/mark.exe",
+            "script": "zig build; Get-Content examples/test-1.mark | zig-out/bin/mark.exe",
             "args": []
         }
     ]
