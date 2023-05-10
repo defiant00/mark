@@ -1,7 +1,7 @@
 const std = @import("std");
 const Converter = @import("converter.zig").Converter;
 
-const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 3 };
+const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 4 };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -36,7 +36,7 @@ pub fn main() !void {
 fn printUsage() void {
     std.debug.print(
         \\Usage:
-        \\  mark            Convert stdin to stdout
+        \\  mark            Convert from stdin to stdout
         \\  mark help       Print this help and exit
         \\  mark version    Print version and exit
         \\
