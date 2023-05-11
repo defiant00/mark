@@ -51,7 +51,11 @@ pub const StringBuilder = struct {
         return res;
     }
 
-    pub fn append(self: *StringBuilder, val: []const u8) !*Item {
+    pub fn append(self: *StringBuilder, val: []const u8) !void {
+        _ = try self.appendGet(val);
+    }
+
+    pub fn appendGet(self: *StringBuilder, val: []const u8) !*Item {
         const new = try Item.init(self.allocator, val);
         if (self.last) |l| {
             l.next = new;
@@ -62,10 +66,9 @@ pub const StringBuilder = struct {
         return new;
     }
 
-    pub fn appendLine(self: *StringBuilder, val: []const u8) !*Item {
-        const new = try self.append(val);
-        _ = try self.append("\n");
-        return new;
+    pub fn appendLine(self: *StringBuilder, val: []const u8) !void {
+        try self.append(val);
+        try self.append("\n");
     }
 
     pub fn toString(self: *StringBuilder) ![]const u8 {
@@ -93,9 +96,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("123");
-        _ = try sb.append("45");
-        _ = try sb.append("6789");
+        try sb.append("123");
+        try sb.append("45");
+        try sb.append("6789");
 
         std.debug.assert(sb.length() == 9);
     }
@@ -110,9 +113,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("");
-        _ = try sb.append("123");
-        var item = try sb.append("x");
+        try sb.append("");
+        try sb.append("123");
+        var item = try sb.appendGet("x");
         item.value = "";
 
         std.debug.assert(sb.length() == 3);
@@ -122,9 +125,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.appendLine("123");
-        _ = try sb.appendLine("45");
-        _ = try sb.append("6789");
+        try sb.appendLine("123");
+        try sb.appendLine("45");
+        try sb.append("6789");
 
         std.debug.assert(sb.length() == 11);
     }
@@ -133,9 +136,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("123");
-        var item = try sb.append("456");
-        _ = try sb.append("789");
+        try sb.append("123");
+        var item = try sb.appendGet("456");
+        try sb.append("789");
 
         item.value = "x";
 
@@ -146,9 +149,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("123");
-        _ = try sb.append("45");
-        _ = try sb.append("6789");
+        try sb.append("123");
+        try sb.append("45");
+        try sb.append("6789");
 
         const str = try sb.toString();
         defer sb.allocator.free(str);
@@ -170,9 +173,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("");
-        _ = try sb.append("123");
-        var item = try sb.append("x");
+        try sb.append("");
+        try sb.append("123");
+        var item = try sb.appendGet("x");
         item.value = "";
 
         const str = try sb.toString();
@@ -185,9 +188,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.appendLine("123");
-        _ = try sb.appendLine("45");
-        _ = try sb.append("6789");
+        try sb.appendLine("123");
+        try sb.appendLine("45");
+        try sb.append("6789");
 
         const str = try sb.toString();
         defer sb.allocator.free(str);
@@ -199,9 +202,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("123");
-        var item = try sb.append("456");
-        _ = try sb.append("789");
+        try sb.append("123");
+        var item = try sb.appendGet("456");
+        try sb.append("789");
 
         item.value = "x";
 
@@ -215,9 +218,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("123");
-        _ = try sb.append("45");
-        _ = try sb.append("6789");
+        try sb.append("123");
+        try sb.append("45");
+        try sb.append("6789");
 
         var list = std.ArrayList(u8).init(sb.allocator);
         defer list.deinit();
@@ -241,9 +244,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("");
-        _ = try sb.append("123");
-        var item = try sb.append("x");
+        try sb.append("");
+        try sb.append("123");
+        var item = try sb.appendGet("x");
         item.value = "";
 
         var list = std.ArrayList(u8).init(sb.allocator);
@@ -257,9 +260,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.appendLine("123");
-        _ = try sb.appendLine("45");
-        _ = try sb.append("6789");
+        try sb.appendLine("123");
+        try sb.appendLine("45");
+        try sb.append("6789");
 
         var list = std.ArrayList(u8).init(sb.allocator);
         defer list.deinit();
@@ -272,9 +275,9 @@ pub const StringBuilder = struct {
         var sb = StringBuilder.init(std.testing.allocator);
         defer sb.deinit();
 
-        _ = try sb.append("123");
-        var item = try sb.append("456");
-        _ = try sb.append("789");
+        try sb.append("123");
+        var item = try sb.appendGet("456");
+        try sb.append("789");
 
         item.value = "x";
 

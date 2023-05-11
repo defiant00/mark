@@ -8,20 +8,24 @@ pub const Converter = struct {
         builder: *StringBuilder,
         in_paragraph: bool,
 
-        fn init(src: []const u8, sb: *StringBuilder, in_para: bool) State {
+        fn clone(self: State) State {
             return .{
-                .source = src,
-                .builder = sb,
-                .in_paragraph = in_para,
+                .source = self.source,
+                .builder = self.builder,
+                .in_paragraph = self.in_paragraph,
             };
-        }
-
-        fn start(src: []const u8, sb: *StringBuilder) State {
-            return init(src, sb, false);
         }
 
         fn done(self: State) bool {
             return self.source.len == 0;
+        }
+
+        fn start(src: []const u8, sb: *StringBuilder) State {
+            return .{
+                .source = src,
+                .builder = sb,
+                .in_paragraph = false,
+            };
         }
     };
 
@@ -38,39 +42,64 @@ pub const Converter = struct {
         try state.builder.write(writer);
     }
 
-    pub fn convert(state: State) !State {
-        var val = state.source;
-        var new_state = State.init(state.source[state.source.len..], state.builder, state.in_paragraph);
+    pub fn convert(prior_state: State) !State {
+        var val = prior_state.source;
+        var state = prior_state.clone();
+        state.source = "";
 
-        if (std.mem.indexOfScalar(u8, state.source, '\n')) |lf_index| {
-            val = state.source[0..lf_index];
-            new_state.source = state.source[lf_index + 1 ..];
+        if (std.mem.indexOfScalar(u8, prior_state.source, '\n')) |lf_index| {
+            val = prior_state.source[0..lf_index];
+            state.source = prior_state.source[lf_index + 1 ..];
         }
         val = std.mem.trimRight(u8, val, &[_]u8{ ' ', '\t', '\r' });
 
         if (val.len > 0) {
             if (state.in_paragraph) {
-                _ = try state.builder.append("<br />");
+                try state.builder.append("<br />");
             } else {
-                _ = try state.builder.append("<p>");
+                try state.builder.append("<p>");
             }
-            _ = try state.builder.append(val);
-            new_state.in_paragraph = true;
+            state = try convertLine(state, val);
+            state.in_paragraph = true;
         } else {
             if (state.in_paragraph) {
-                _ = try state.builder.appendLine("</p>");
+                try state.builder.appendLine("</p>");
             }
-            new_state.in_paragraph = false;
+            state.in_paragraph = false;
         }
 
         // end of document cleanup
-        if (new_state.done()) {
+        if (state.done()) {
             if (state.in_paragraph) {
-                _ = try state.builder.appendLine("</p>");
+                try state.builder.appendLine("</p>");
             }
-            new_state.in_paragraph = false;
+            state.in_paragraph = false;
         }
 
-        return new_state;
+        return state;
+    }
+
+    fn convertLine(prior_state: State, val: []const u8) !State {
+        var state = prior_state.clone();
+        var remaining = val;
+
+        var i: usize = 0;
+        while (remaining.len > 0 and i < remaining.len) {
+            if (remaining[i] == '\\' and (i + 1) < remaining.len) {
+                if (i > 0) {
+                    try state.builder.append(remaining[0..i]);
+                }
+                try state.builder.append(remaining[i + 1 .. i + 2]);
+                remaining = remaining[i + 2 ..];
+                i = 0;
+            } else {
+                i += 1;
+            }
+        }
+        if (remaining.len > 0) {
+            try state.builder.append(remaining);
+        }
+
+        return state;
     }
 };
