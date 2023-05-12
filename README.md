@@ -6,7 +6,7 @@ Implemented in [Zig](https://ziglang.org/), last compiled with 0.11.0-dev.2868+1
 * `_text_` _italics_
 * `*` unordered list
 * `n.` ordered list
-* `---` divider
+* `-`+ on its own line - divider
 * `# text` to `##### text` heading
 * `> text` quote
 * `[ ]` unchecked check box
