@@ -1,7 +1,7 @@
 const std = @import("std");
 const Converter = @import("converter.zig").Converter;
 
-const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 5 };
+const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 6 };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
