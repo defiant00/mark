@@ -63,7 +63,29 @@ pub const Converter = struct {
     }
 
     fn convertLine(self: *Converter, val: []const u8) !void {
-        try self.builder.append(val);
+        var remaining = val;
+        var i: usize = 0;
+
+        while (i < remaining.len) {
+            switch (remaining[i]) {
+                '\\' => {
+                    if (i + 1 < remaining.len) {
+                        if (i > 0) {
+                            try self.builder.append(remaining[0..i]);
+                        }
+                        try self.builder.append(remaining[i + 1 .. i + 2]);
+                        remaining = remaining[i + 2 ..];
+                        i = 0;
+                    } else {
+                        i += 1;
+                    }
+                },
+                else => i += 1,
+            }
+        }
+        if (remaining.len > 0) {
+            try self.builder.append(remaining);
+        }
     }
 
     pub fn convertAll(alloc: Allocator, source: []const u8, writer: anytype) !void {
