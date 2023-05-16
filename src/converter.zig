@@ -3,6 +3,72 @@ const Allocator = std.mem.Allocator;
 const StringBuilder = @import("string_builder.zig").StringBuilder;
 
 pub const Converter = struct {
+    const Line = struct {
+        converter: *Converter,
+        line: []const u8,
+        start_index: usize,
+        current_index: usize,
+
+        fn init(conv: *Converter, line: []const u8) Line {
+            return .{
+                .converter = conv,
+                .line = line,
+                .start_index = 0,
+                .current_index = 0,
+            };
+        }
+
+        fn deinit(self: Line) void {
+            _ = self;
+        }
+
+        fn isAtEnd(self: Line) bool {
+            return self.current_index >= self.line.len;
+        }
+
+        fn advance(self: *Line) void {
+            self.current_index += 1;
+            if (self.isAtEnd()) self.current_index = self.line.len;
+        }
+
+        fn peek(self: Line, offset: usize) u8 {
+            const index = self.current_index + offset;
+            return if (index < self.line.len) self.line[index] else 0;
+        }
+
+        fn discard(self: *Line) void {
+            self.start_index = self.current_index;
+        }
+
+        fn append(self: *Line, offset: usize) !void {
+            const i = self.current_index - offset;
+            if (i > self.start_index) {
+                try self.converter.builder.append(self.line[self.start_index..i]);
+                self.start_index = i;
+            }
+        }
+
+        fn convert(self: *Line) !void {
+            while (!self.isAtEnd()) {
+                const c = self.peek(0);
+                self.advance();
+
+                switch (c) {
+                    '\\' => {
+                        if (!self.isAtEnd()) {
+                            try self.append(1); // append any text before \
+                            self.discard(); // discard the \
+                            self.advance();
+                            try self.append(0); // append the escaped character
+                        }
+                    },
+                    else => {},
+                }
+            }
+            try self.append(0); // append any remaining text
+        }
+    };
+
     source: []const u8,
     in_paragraph: bool,
     builder: *StringBuilder,
@@ -62,30 +128,11 @@ pub const Converter = struct {
         }
     }
 
-    fn convertLine(self: *Converter, val: []const u8) !void {
-        var remaining = val;
-        var i: usize = 0;
+    fn convertLine(self: *Converter, line: []const u8) !void {
+        var line_conv = Line.init(self, line);
+        defer line_conv.deinit();
 
-        while (i < remaining.len) {
-            switch (remaining[i]) {
-                '\\' => {
-                    if (i + 1 < remaining.len) {
-                        if (i > 0) {
-                            try self.builder.append(remaining[0..i]);
-                        }
-                        try self.builder.append(remaining[i + 1 .. i + 2]);
-                        remaining = remaining[i + 2 ..];
-                        i = 0;
-                    } else {
-                        i += 1;
-                    }
-                },
-                else => i += 1,
-            }
-        }
-        if (remaining.len > 0) {
-            try self.builder.append(remaining);
-        }
+        try line_conv.convert();
     }
 
     pub fn convertAll(alloc: Allocator, source: []const u8, writer: anytype) !void {

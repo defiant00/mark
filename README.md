@@ -4,7 +4,7 @@ Implemented in [Zig](https://ziglang.org/), last compiled with 0.11.0-dev.2868+1
 
 * `*text*` **bold**
 * `_text_` _italics_
-* `*` unordered list
+* `-` unordered list
 * `n.` ordered list
 * `-`+ on its own line - divider
 * `# text` to `##### text` heading
