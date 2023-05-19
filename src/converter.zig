@@ -2,18 +2,14 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const StringBuilder = @import("string_builder.zig").StringBuilder;
 
-const StartStop = struct {
-    start_size: usize,
-    stop_size: usize,
-    matched: bool,
-    item: *StringBuilder.Item,
+const Area = struct {
+    start: *StringBuilder.Item,
+    end: ?*StringBuilder.Item,
 
-    fn init(start_size: usize, stop_size: usize, matched: bool, item: *StringBuilder.Item) StartStop {
+    fn init(start: *StringBuilder.Item) Area {
         return .{
-            .start_size = start_size,
-            .stop_size = stop_size,
-            .matched = matched,
-            .item = item,
+            .start = start,
+            .end = null,
         };
     }
 };
@@ -22,14 +18,14 @@ pub const Converter = struct {
     source: []const u8,
     in_paragraph: bool,
     builder: *StringBuilder,
-    bolds: std.ArrayList(StartStop),
+    bolds: std.ArrayList(Area),
 
     fn init(alloc: Allocator, source: []const u8, builder: *StringBuilder) Converter {
         return .{
             .source = source,
             .in_paragraph = false,
             .builder = builder,
-            .bolds = std.ArrayList(StartStop).init(alloc),
+            .bolds = std.ArrayList(Area).init(alloc),
         };
     }
 
@@ -43,8 +39,9 @@ pub const Converter = struct {
 
     fn endBlock(self: *Converter) void {
         for (self.bolds.items) |bold| {
-            if (bold.matched) {
-                bold.item.value = "<strong>";
+            if (bold.end) |end| {
+                bold.start.value = "<strong>";
+                end.value = "</strong>";
             }
         }
         self.bolds.clearRetainingCapacity();
@@ -171,9 +168,19 @@ const LineConverter = struct {
         };
     }
 
-    fn convert(self: *LineConverter) !void {
-        var prior_ws = true;
+    fn isPriorWhitespace(self: LineConverter) bool {
+        return if (self.start_index > 0) isWhitespace(self.line[self.start_index - 1]) else true;
+    }
 
+    fn isNextWhitespace(self: LineConverter) bool {
+        const c = self.peek(0);
+        if (c == '\\' and self.current_index + 1 < self.line.len) {
+            return isWhitespace(self.peek(1));
+        }
+        return isWhitespace(c);
+    }
+
+    fn convert(self: *LineConverter) !void {
         while (!self.isAtEnd()) {
             const c = self.peek(0);
             self.advance();
@@ -186,44 +193,36 @@ const LineConverter = struct {
                         self.advance();
                         try self.append(0); // append the escaped character
                     }
-                    prior_ws = false;
                 },
                 '*' => {
                     try self.append(1); // append any text before *
+                    const prior_ws = self.isPriorWhitespace();
 
                     while (self.peek(0) == '*') self.advance();
-                    const len = self.length();
                     const item = try self.appendGet();
 
-                    const max_stop = if (prior_ws) len - 1 else len;
-
                     var matched = false;
-                    if (self.converter.bolds.items.len > 0) {
-                        var i = self.converter.bolds.items.len;
-                        while (i > 0) : (i -= 1) {
-                            var bold = self.converter.bolds.items[i - 1];
-                            if (!bold.matched and bold.start_size <= max_stop) {
-                                std.debug.print("found match\n", .{});
-                                bold.matched = true;
-                                matched = true;
+                    if (!prior_ws) {
+                        if (self.converter.bolds.items.len > 0) {
+                            var i = self.converter.bolds.items.len;
+                            while (i > 0) : (i -= 1) {
+                                var bold = &self.converter.bolds.items[i - 1];
+                                if (bold.end == null and bold.start.value.len == item.value.len) {
+                                    bold.end = item;
+                                    matched = true;
+                                    self.converter.bolds.shrinkRetainingCapacity(i);
+                                    break;
+                                }
                             }
                         }
                     }
 
-                    const max_start = if (isWhitespace(self.peek(0))) len - 1 else len;
-
-                    const start_stop = StartStop.init(max_start, max_stop, matched, item);
-                    try self.converter.bolds.append(start_stop);
-                    std.debug.print("bold start {d}, stop {d}\n", .{ start_stop.start_size, start_stop.stop_size });
-
-                    prior_ws = false;
+                    if (!matched and !self.isNextWhitespace()) {
+                        try self.converter.bolds.append(Area.init(item));
+                    }
                 },
-                '_' => {
-                    prior_ws = false;
-                },
-                else => {
-                    prior_ws = isWhitespace(c);
-                },
+                '_' => {},
+                else => {},
             }
         }
         try self.append(0); // append any remaining text

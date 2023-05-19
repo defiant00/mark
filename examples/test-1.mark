@@ -7,4 +7,20 @@ second paragraph
 with some
 lines
 
+some *bold* text
+
 some* *bold* text
+
+**some *bold* text**
+
+***some **bold *and* nested** text***
+
+*some **bold *and* nested** text***
+
+*first* or *last*
+
+*a *first* or *last* a*
+
+*\ test*
+
+*\*test*
