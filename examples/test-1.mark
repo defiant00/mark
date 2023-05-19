@@ -7,7 +7,4 @@ second paragraph
 with some
 lines
 
-some *bold* and _italic_ text
-
-**some *bold* and _italic_ text
-**bolder** bold
+some* *bold* text

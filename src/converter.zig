@@ -5,12 +5,14 @@ const StringBuilder = @import("string_builder.zig").StringBuilder;
 const StartStop = struct {
     start_size: usize,
     stop_size: usize,
+    matched: bool,
     item: *StringBuilder.Item,
 
-    fn init(start_size: usize, stop_size: usize, item: *StringBuilder.Item) StartStop {
+    fn init(start_size: usize, stop_size: usize, matched: bool, item: *StringBuilder.Item) StartStop {
         return .{
             .start_size = start_size,
             .stop_size = stop_size,
+            .matched = matched,
             .item = item,
         };
     }
@@ -40,7 +42,12 @@ pub const Converter = struct {
     }
 
     fn endBlock(self: *Converter) void {
-        _ = self;
+        for (self.bolds.items) |bold| {
+            if (bold.matched) {
+                bold.item.value = "<strong>";
+            }
+        }
+        self.bolds.clearRetainingCapacity();
     }
 
     fn convert(self: *Converter) !void {
@@ -188,10 +195,25 @@ const LineConverter = struct {
                     const len = self.length();
                     const item = try self.appendGet();
 
-                    const max_start = if (isWhitespace(self.peek(0))) len - 1 else len;
                     const max_stop = if (prior_ws) len - 1 else len;
 
-                    const start_stop = StartStop.init(max_start, max_stop, item);
+                    var matched = false;
+                    if (self.converter.bolds.items.len > 0) {
+                        var i = self.converter.bolds.items.len;
+                        while (i > 0) : (i -= 1) {
+                            var bold = self.converter.bolds.items[i - 1];
+                            if (!bold.matched and bold.start_size <= max_stop) {
+                                std.debug.print("found match\n", .{});
+                                bold.matched = true;
+                                matched = true;
+                            }
+                        }
+                    }
+
+                    const max_start = if (isWhitespace(self.peek(0))) len - 1 else len;
+
+                    const start_stop = StartStop.init(max_start, max_stop, matched, item);
+                    try self.converter.bolds.append(start_stop);
                     std.debug.print("bold start {d}, stop {d}\n", .{ start_stop.start_size, start_stop.stop_size });
 
                     prior_ws = false;
