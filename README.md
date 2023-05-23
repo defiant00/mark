@@ -11,8 +11,10 @@ Implemented in [Zig](https://ziglang.org/), last compiled with 0.11.0-dev.2868+1
 * `> text` quote
 * `[ ]` unchecked check box
 * `[X]` checked check box
-* `\n` is a newline
-  * multiple `\n` is a new paragraph
+* `\n` is a `<br>`
+  * multiple `\n` is a new paragraph `<p></p>`
+* `"text"` is literal text
+  * `""` is a literal `"`
 * link
 * image
 * anchor
