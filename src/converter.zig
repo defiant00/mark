@@ -19,6 +19,7 @@ pub const Converter = struct {
     in_paragraph: bool,
     builder: *StringBuilder,
     bolds: std.ArrayList(Area),
+    italics: std.ArrayList(Area),
 
     fn init(alloc: Allocator, source: []const u8, builder: *StringBuilder) Converter {
         return .{
@@ -26,11 +27,13 @@ pub const Converter = struct {
             .in_paragraph = false,
             .builder = builder,
             .bolds = std.ArrayList(Area).init(alloc),
+            .italics = std.ArrayList(Area).init(alloc),
         };
     }
 
     fn deinit(self: Converter) void {
         self.bolds.deinit();
+        self.italics.deinit();
     }
 
     fn isAtEnd(self: Converter) bool {
@@ -45,6 +48,14 @@ pub const Converter = struct {
             }
         }
         self.bolds.clearRetainingCapacity();
+
+        for (self.italics.items) |italic| {
+            if (italic.end) |end| {
+                italic.start.value = "<em>";
+                end.value = "</em>";
+            }
+        }
+        self.italics.clearRetainingCapacity();
     }
 
     fn convert(self: *Converter) !void {
@@ -161,6 +172,10 @@ const LineConverter = struct {
         return item;
     }
 
+    fn appendLiteral(self: *LineConverter, literal: []const u8) !void {
+        try self.converter.builder.append(literal);
+    }
+
     fn isWhitespace(c: u8) bool {
         return switch (c) {
             ' ', '\t', '\r', 0 => true,
@@ -174,10 +189,44 @@ const LineConverter = struct {
 
     fn isNextWhitespace(self: LineConverter) bool {
         const c = self.peek(0);
-        if (c == '\\' and self.current_index + 1 < self.line.len) {
+        if (c == '"' and self.current_index + 1 < self.line.len) {
             return isWhitespace(self.peek(1));
         }
         return isWhitespace(c);
+    }
+
+    fn escape(self: *LineConverter, escape_literal: []const u8) !void {
+        try self.append(1); // append any text before the character to escape
+        self.discard(); // discard the character
+        try self.appendLiteral(escape_literal);
+    }
+
+    fn styleBlock(self: *LineConverter, items: *std.ArrayList(Area), block_char: u8) !void {
+        try self.append(1); // append any text before the block start
+        const prior_ws = self.isPriorWhitespace();
+
+        while (self.peek(0) == block_char) self.advance();
+        const new_item = try self.appendGet();
+
+        var matched = false;
+        if (!prior_ws) {
+            if (items.items.len > 0) {
+                var i = items.items.len;
+                while (i > 0) : (i -= 1) {
+                    var item = &items.items[i - 1];
+                    if (item.end == null and item.start.value.len == new_item.value.len) {
+                        item.end = new_item;
+                        matched = true;
+                        items.shrinkRetainingCapacity(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!matched and !self.isNextWhitespace()) {
+            try items.append(Area.init(new_item));
+        }
     }
 
     fn convert(self: *LineConverter) !void {
@@ -186,42 +235,27 @@ const LineConverter = struct {
             self.advance();
 
             switch (c) {
-                '\\' => {
+                '&' => try self.escape("&amp;"),
+                '<' => try self.escape("&lt;"),
+                '>' => try self.escape("&gt;"),
+                '\'' => try self.escape("&#39;"),
+                '"' => {
+                    try self.append(1); // append any text before "
+                    self.discard(); // discard the "
                     if (!self.isAtEnd()) {
-                        try self.append(1); // append any text before \
-                        self.discard(); // discard the \
-                        self.advance();
-                        try self.append(0); // append the escaped character
-                    }
-                },
-                '*' => {
-                    try self.append(1); // append any text before *
-                    const prior_ws = self.isPriorWhitespace();
-
-                    while (self.peek(0) == '*') self.advance();
-                    const item = try self.appendGet();
-
-                    var matched = false;
-                    if (!prior_ws) {
-                        if (self.converter.bolds.items.len > 0) {
-                            var i = self.converter.bolds.items.len;
-                            while (i > 0) : (i -= 1) {
-                                var bold = &self.converter.bolds.items[i - 1];
-                                if (bold.end == null and bold.start.value.len == item.value.len) {
-                                    bold.end = item;
-                                    matched = true;
-                                    self.converter.bolds.shrinkRetainingCapacity(i);
-                                    break;
-                                }
-                            }
+                        if (self.peek(0) == '"') {
+                            self.advance();
+                            self.discard(); //discard the second "
+                            try self.appendLiteral("&quot;");
+                        } else {
+                            // todo - literal string
                         }
-                    }
-
-                    if (!matched and !self.isNextWhitespace()) {
-                        try self.converter.bolds.append(Area.init(item));
+                    } else {
+                        try self.appendLiteral("&quot;");
                     }
                 },
-                '_' => {},
+                '*' => try self.styleBlock(&self.converter.bolds, '*'),
+                '_' => try self.styleBlock(&self.converter.italics, '_'),
                 else => {},
             }
         }
