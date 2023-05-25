@@ -2,60 +2,25 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const StringBuilder = @import("string_builder.zig").StringBuilder;
 
-const Area = struct {
-    start: *StringBuilder.Item,
-    end: ?*StringBuilder.Item,
-
-    fn init(start: *StringBuilder.Item) Area {
-        return .{
-            .start = start,
-            .end = null,
-        };
-    }
-};
-
 pub const Converter = struct {
     source: []const u8,
     in_paragraph: bool,
     builder: *StringBuilder,
-    bolds: std.ArrayList(Area),
-    italics: std.ArrayList(Area),
 
-    fn init(alloc: Allocator, source: []const u8, builder: *StringBuilder) Converter {
+    fn init(source: []const u8, builder: *StringBuilder) Converter {
         return .{
             .source = source,
             .in_paragraph = false,
             .builder = builder,
-            .bolds = std.ArrayList(Area).init(alloc),
-            .italics = std.ArrayList(Area).init(alloc),
         };
     }
 
     fn deinit(self: Converter) void {
-        self.bolds.deinit();
-        self.italics.deinit();
+        _ = self;
     }
 
     fn isAtEnd(self: Converter) bool {
         return self.source.len == 0;
-    }
-
-    fn endBlock(self: *Converter) void {
-        for (self.bolds.items) |bold| {
-            if (bold.end) |end| {
-                bold.start.value = "<strong>";
-                end.value = "</strong>";
-            }
-        }
-        self.bolds.clearRetainingCapacity();
-
-        for (self.italics.items) |italic| {
-            if (italic.end) |end| {
-                italic.start.value = "<em>";
-                end.value = "</em>";
-            }
-        }
-        self.italics.clearRetainingCapacity();
     }
 
     fn convert(self: *Converter) !void {
@@ -82,16 +47,13 @@ pub const Converter = struct {
                 try self.builder.appendLine("</p>");
             }
             self.in_paragraph = false;
-            self.endBlock();
         }
+    }
 
-        // end of document cleanup
-        if (self.isAtEnd()) {
-            if (self.in_paragraph) {
-                try self.builder.appendLine("</p>");
-            }
+    fn finish(self: *Converter) !void {
+        if (self.in_paragraph) {
+            try self.builder.appendLine("</p>");
             self.in_paragraph = false;
-            self.endBlock();
         }
     }
 
@@ -106,12 +68,14 @@ pub const Converter = struct {
         var sb = StringBuilder.init(alloc);
         defer sb.deinit();
 
-        var conv = init(alloc, source, &sb);
+        var conv = init(source, &sb);
         defer conv.deinit();
 
         while (!conv.isAtEnd()) {
             try conv.convert();
         }
+
+        try conv.finish(); // end of document cleanup
 
         try sb.write(writer);
     }
@@ -122,6 +86,8 @@ const LineConverter = struct {
     line: []const u8,
     start_index: usize,
     current_index: usize,
+    bold: bool,
+    italic: bool,
 
     fn init(conv: *Converter, line: []const u8) LineConverter {
         return .{
@@ -129,6 +95,8 @@ const LineConverter = struct {
             .line = line,
             .start_index = 0,
             .current_index = 0,
+            .bold = false,
+            .italic = false,
         };
     }
 
@@ -150,10 +118,6 @@ const LineConverter = struct {
         return if (index < self.line.len) self.line[index] else 0;
     }
 
-    fn length(self: LineConverter) usize {
-        return self.current_index - self.start_index;
-    }
-
     fn discard(self: *LineConverter) void {
         self.start_index = self.current_index;
     }
@@ -164,12 +128,6 @@ const LineConverter = struct {
             try self.converter.builder.append(self.line[self.start_index..i]);
             self.start_index = i;
         }
-    }
-
-    fn appendGet(self: *LineConverter) !*StringBuilder.Item {
-        const item = try self.converter.builder.appendGet(self.line[self.start_index..self.current_index]);
-        self.start_index = self.current_index;
-        return item;
     }
 
     fn appendLiteral(self: *LineConverter, literal: []const u8) !void {
@@ -188,11 +146,7 @@ const LineConverter = struct {
     }
 
     fn isNextWhitespace(self: LineConverter) bool {
-        const c = self.peek(0);
-        if (c == '"' and self.current_index + 1 < self.line.len) {
-            return isWhitespace(self.peek(1));
-        }
-        return isWhitespace(c);
+        return isWhitespace(self.peek(0));
     }
 
     fn escape(self: *LineConverter, escape_literal: []const u8) !void {
@@ -201,31 +155,30 @@ const LineConverter = struct {
         try self.appendLiteral(escape_literal);
     }
 
-    fn styleBlock(self: *LineConverter, items: *std.ArrayList(Area), block_char: u8) !void {
-        try self.append(1); // append any text before the block start
+    fn block(self: *LineConverter, flag: *bool, comptime tag: []const u8) !void {
+        try self.append(1); // append any text before the block
         const prior_ws = self.isPriorWhitespace();
+        const next_ws = self.isNextWhitespace();
 
-        while (self.peek(0) == block_char) self.advance();
-        const new_item = try self.appendGet();
-
-        var matched = false;
-        if (!prior_ws) {
-            if (items.items.len > 0) {
-                var i = items.items.len;
-                while (i > 0) : (i -= 1) {
-                    var item = &items.items[i - 1];
-                    if (item.end == null and item.start.value.len == new_item.value.len) {
-                        item.end = new_item;
-                        matched = true;
-                        items.shrinkRetainingCapacity(i);
-                        break;
-                    }
-                }
-            }
+        if (!flag.* and !next_ws) {
+            // start block
+            self.discard();
+            try self.appendLiteral("<" ++ tag ++ ">");
+            flag.* = true;
+        } else if (flag.* and !prior_ws) {
+            // end block
+            self.discard();
+            try self.appendLiteral("</" ++ tag ++ ">");
+            flag.* = false;
         }
+    }
 
-        if (!matched and !self.isNextWhitespace()) {
-            try items.append(Area.init(new_item));
+    fn finish(self: *LineConverter) !void {
+        if (self.bold) {
+            try self.appendLiteral("</strong>");
+        }
+        if (self.italic) {
+            try self.appendLiteral("</em>");
         }
     }
 
@@ -242,23 +195,19 @@ const LineConverter = struct {
                 '"' => {
                     try self.append(1); // append any text before "
                     self.discard(); // discard the "
-                    if (!self.isAtEnd()) {
-                        if (self.peek(0) == '"') {
-                            self.advance();
-                            self.discard(); //discard the second "
-                            try self.appendLiteral("&quot;");
-                        } else {
-                            // todo - literal string
-                        }
-                    } else {
+                    if (self.peek(0) == '"') {
+                        self.advance();
+                        self.discard(); //discard the second "
                         try self.appendLiteral("&quot;");
                     }
                 },
-                '*' => try self.styleBlock(&self.converter.bolds, '*'),
-                '_' => try self.styleBlock(&self.converter.italics, '_'),
+                '*' => try self.block(&self.bold, "strong"),
+                '_' => try self.block(&self.italic, "em"),
                 else => {},
             }
         }
         try self.append(0); // append any remaining text
+
+        try self.finish(); // end of line cleanup
     }
 };
