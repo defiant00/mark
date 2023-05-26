@@ -82,12 +82,39 @@ pub const Converter = struct {
 };
 
 const LineConverter = struct {
+    const Tag = enum {
+        bold,
+        italic,
+
+        count,
+
+        fn start(self: Tag) []const u8 {
+            return switch (self) {
+                .bold => "<strong>",
+                .italic => "<em>",
+
+                else => "<unknown tag>",
+            };
+        }
+
+        fn end(self: Tag) []const u8 {
+            return switch (self) {
+                .bold => "</strong>",
+                .italic => "</em>",
+
+                else => "</unknown tag>",
+            };
+        }
+    };
+
     converter: *Converter,
     line: []const u8,
     start_index: usize,
     current_index: usize,
-    bold: bool,
-    italic: bool,
+    in_literal: bool,
+
+    tags: [@enumToInt(Tag.count)]Tag,
+    tags_length: usize,
 
     fn init(conv: *Converter, line: []const u8) LineConverter {
         return .{
@@ -95,8 +122,10 @@ const LineConverter = struct {
             .line = line,
             .start_index = 0,
             .current_index = 0,
-            .bold = false,
-            .italic = false,
+            .in_literal = false,
+
+            .tags = undefined,
+            .tags_length = 0,
         };
     }
 
@@ -155,30 +184,53 @@ const LineConverter = struct {
         try self.appendLiteral(escape_literal);
     }
 
-    fn block(self: *LineConverter, flag: *bool, comptime tag: []const u8) !void {
-        try self.append(1); // append any text before the block
+    fn inTag(self: LineConverter, tag: Tag) bool {
+        for (0..self.tags_length) |i| {
+            if (self.tags[i] == tag) return true;
+        }
+        return false;
+    }
+
+    fn addTag(self: *LineConverter, tag: Tag) void {
+        self.tags[self.tags_length] = tag;
+        self.tags_length += 1;
+    }
+
+    fn removeTag(self: *LineConverter, tag: Tag) void {
+        for (0..self.tags_length) |i| {
+            if (self.tags[i] == tag) {
+                for (i + 1..self.tags_length) |j| {
+                    self.tags[j - 1] = self.tags[j];
+                }
+                self.tags_length -= 1;
+                return;
+            }
+        }
+    }
+
+    fn convertTag(self: *LineConverter, tag: Tag) !void {
+        try self.append(1); // append any text before the tag
         const prior_ws = self.isPriorWhitespace();
         const next_ws = self.isNextWhitespace();
+        const in_tag = self.inTag(tag);
 
-        if (!flag.* and !next_ws) {
-            // start block
+        if (!in_tag and !next_ws) {
+            // start tag
             self.discard();
-            try self.appendLiteral("<" ++ tag ++ ">");
-            flag.* = true;
-        } else if (flag.* and !prior_ws) {
-            // end block
+            try self.appendLiteral(tag.start());
+            self.addTag(tag);
+        } else if (in_tag and !prior_ws) {
+            // end tag
             self.discard();
-            try self.appendLiteral("</" ++ tag ++ ">");
-            flag.* = false;
+            try self.appendLiteral(tag.end());
+            self.removeTag(tag);
         }
     }
 
     fn finish(self: *LineConverter) !void {
-        if (self.bold) {
-            try self.appendLiteral("</strong>");
-        }
-        if (self.italic) {
-            try self.appendLiteral("</em>");
+        var i = self.tags_length;
+        while (i > 0) : (i -= 1) {
+            try self.appendLiteral(self.tags[i - 1].end());
         }
     }
 
@@ -194,15 +246,28 @@ const LineConverter = struct {
                 '\'' => try self.escape("&#39;"),
                 '"' => {
                     try self.append(1); // append any text before "
-                    self.discard(); // discard the "
                     if (self.peek(0) == '"') {
                         self.advance();
-                        self.discard(); //discard the second "
+                        self.discard(); //discard the "s
                         try self.appendLiteral("&quot;");
+                    } else {
+                        const prior_ws = self.isPriorWhitespace();
+                        const next_ws = self.isNextWhitespace();
+                        self.discard(); // discard the "
+
+                        if (!self.in_literal and !next_ws) {
+                            // start literal text
+                            self.in_literal = true;
+                        } else if (self.in_literal and !prior_ws) {
+                            // end literal text
+                            self.in_literal = false;
+                        } else {
+                            try self.appendLiteral("&quot;");
+                        }
                     }
                 },
-                '*' => try self.block(&self.bold, "strong"),
-                '_' => try self.block(&self.italic, "em"),
+                '*' => if (!self.in_literal) try self.convertTag(Tag.bold),
+                '_' => if (!self.in_literal) try self.convertTag(Tag.italic),
                 else => {},
             }
         }
