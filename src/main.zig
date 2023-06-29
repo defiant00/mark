@@ -1,7 +1,8 @@
 const std = @import("std");
 const Converter = @import("converter.zig").Converter;
+const StringBuilder = @import("string_builder.zig").StringBuilder;
 
-const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 14 };
+const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 15 };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -20,7 +21,12 @@ pub fn main() !void {
         var buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
         const stdout = buffered_writer.writer();
 
-        try Converter.convertAll(alloc, source, stdout);
+        var sb = StringBuilder.init(alloc);
+        defer sb.deinit();
+
+        var conv = Converter.init(&sb);
+        try conv.convert(source);
+        try conv.finish(stdout);
 
         try buffered_writer.flush();
     } else if (args.len == 2 and std.mem.eql(u8, args[1], "help")) {
