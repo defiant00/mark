@@ -2,7 +2,7 @@ const std = @import("std");
 const Converter = @import("converter.zig").Converter;
 const StringBuilder = @import("string_builder.zig").StringBuilder;
 
-const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 15 };
+const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 16 };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

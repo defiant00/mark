@@ -1,4 +1,5 @@
 const std = @import("std");
+const unicode = std.unicode;
 const Allocator = std.mem.Allocator;
 const StringBuilder = @import("string_builder.zig").StringBuilder;
 
@@ -30,29 +31,130 @@ pub const Converter = struct {
 
     builder: *StringBuilder,
 
+    source: []const u8,
+    start_index: usize,
+    current_index: usize,
+    prior_char: u21,
+
+    in_literal: bool,
+    tags: [@enumToInt(Tag.count)]Tag,
+    tags_length: usize,
+
     pub fn init(builder: *StringBuilder) Converter {
         return .{
             .builder = builder,
+
+            .source = "",
+            .start_index = 0,
+            .current_index = 0,
+            .prior_char = 0,
+
+            .in_literal = false,
+            .tags = undefined,
+            .tags_length = 0,
         };
     }
 
     pub fn convert(self: *Converter, source: []const u8) !void {
-        try self.builder.append(source);
+        self.source = source;
+        self.start_index = 0;
+        self.current_index = 0;
+        self.prior_char = 0;
+
+        self.in_literal = false;
+        self.tags_length = 0;
+
+        while (self.more()) {
+            switch (try self.peek()) {
+                '&' => try self.escape("&amp;"),
+                '<' => try self.escape("&lt;"),
+                '>' => try self.escape("&gt;"),
+                '\'' => try self.escape("&#39;"),
+                '"' => {
+                    try self.append(); // append any text before "
+                    try self.advance(); // accept the "
+
+                    if (try self.peek() == '"') {
+                        try self.advance(); // accept the second "
+                        self.discard(); // discard the "s
+                        try self.builder.append("&quot;");
+                    } else {
+                        const prior_ws = whitespace(self.prior_char);
+                        const next_ws = whitespace(try self.peek());
+                        self.discard(); // discard the "
+
+                        if (!self.in_literal and !next_ws) {
+                            // start literal text
+                            self.in_literal = true;
+                        } else if (self.in_literal and !prior_ws) {
+                            // end literal text
+                            self.in_literal = false;
+                        } else {
+                            try self.builder.append("&quot;");
+                        }
+                    }
+                },
+                // '*' => if (!self.in_literal) try self.convertTag(Tag.bold),
+                // '_' => if (!self.in_literal) try self.convertTag(Tag.italic),
+                else => {
+                    try self.advance();
+                },
+            }
+        }
+        try self.append(); // append any remaining text
+
+        // todo - eol cleanup
     }
 
     pub fn finish(self: *Converter, writer: anytype) !void {
         try self.builder.write(writer);
     }
+
+    fn advance(self: *Converter) !void {
+        self.prior_char = try self.peek();
+        self.current_index += try unicode.utf8ByteSequenceLength(self.source[self.current_index]);
+    }
+
+    fn append(self: *Converter) !void {
+        if (self.current_index > self.start_index) {
+            try self.builder.append(self.source[self.start_index..self.current_index]);
+            self.start_index = self.current_index;
+        }
+    }
+
+    fn discard(self: *Converter) void {
+        self.start_index = self.current_index;
+    }
+
+    fn escape(self: *Converter, literal: []const u8) !void {
+        try self.append();
+        try self.advance();
+        self.discard();
+        try self.builder.append(literal);
+    }
+
+    fn more(self: Converter) bool {
+        return self.current_index < self.source.len;
+    }
+
+    fn peek(self: Converter) !u21 {
+        if (self.more()) {
+            const len = try unicode.utf8ByteSequenceLength(self.source[self.current_index]);
+            return try unicode.utf8Decode(self.source[self.current_index .. self.current_index + len]);
+        }
+        return 0;
+    }
+
+    fn whitespace(c: u21) bool {
+        return switch (c) {
+            ' ', '\t', '\r', '\n', 0 => true,
+            else => false,
+        };
+    }
 };
 
 // pub const Converter = struct {
-//     source: []const u8,
 //     in_paragraph: bool = false,
-//     builder: *StringBuilder,
-
-//     fn isAtEnd(self: Converter) bool {
-//         return self.source.len == 0;
-//     }
 
 //     fn convert(self: *Converter) !void {
 //         var val = self.source;
@@ -114,83 +216,6 @@ pub const Converter = struct {
 
 // const LineConverter = struct {
 
-//     converter: *Converter,
-//     line: []const u8,
-//     start_index: usize,
-//     current_index: usize,
-//     in_literal: bool,
-
-//     tags: [@enumToInt(Tag.count)]Tag,
-//     tags_length: usize,
-
-//     fn init(conv: *Converter, line: []const u8) LineConverter {
-//         return .{
-//             .converter = conv,
-//             .line = line,
-//             .start_index = 0,
-//             .current_index = 0,
-//             .in_literal = false,
-
-//             .tags = undefined,
-//             .tags_length = 0,
-//         };
-//     }
-
-//     fn deinit(self: LineConverter) void {
-//         _ = self;
-//     }
-
-//     fn isAtEnd(self: LineConverter) bool {
-//         return self.current_index >= self.line.len;
-//     }
-
-//     fn advance(self: *LineConverter) void {
-//         self.current_index += 1;
-//         if (self.isAtEnd()) self.current_index = self.line.len;
-//     }
-
-//     fn peek(self: LineConverter, offset: usize) u8 {
-//         const index = self.current_index + offset;
-//         return if (index < self.line.len) self.line[index] else 0;
-//     }
-
-//     fn discard(self: *LineConverter) void {
-//         self.start_index = self.current_index;
-//     }
-
-//     fn append(self: *LineConverter, offset: usize) !void {
-//         const i = self.current_index - offset;
-//         if (i > self.start_index) {
-//             try self.converter.builder.append(self.line[self.start_index..i]);
-//             self.start_index = i;
-//         }
-//     }
-
-//     fn appendLiteral(self: *LineConverter, literal: []const u8) !void {
-//         try self.converter.builder.append(literal);
-//     }
-
-//     fn isWhitespace(c: u8) bool {
-//         return switch (c) {
-//             ' ', '\t', '\r', 0 => true,
-//             else => false,
-//         };
-//     }
-
-//     fn isPriorWhitespace(self: LineConverter) bool {
-//         return if (self.start_index > 0) isWhitespace(self.line[self.start_index - 1]) else true;
-//     }
-
-//     fn isNextWhitespace(self: LineConverter) bool {
-//         return isWhitespace(self.peek(0));
-//     }
-
-//     fn escape(self: *LineConverter, escape_literal: []const u8) !void {
-//         try self.append(1); // append any text before the character to escape
-//         self.discard(); // discard the character
-//         try self.appendLiteral(escape_literal);
-//     }
-
 //     fn inTag(self: LineConverter, tag: Tag) bool {
 //         for (0..self.tags_length) |i| {
 //             if (self.tags[i] == tag) return true;
@@ -241,45 +266,4 @@ pub const Converter = struct {
 //         }
 //     }
 
-//     fn convert(self: *LineConverter) !void {
-//         while (!self.isAtEnd()) {
-//             const c = self.peek(0);
-//             self.advance();
-
-//             switch (c) {
-//                 '&' => try self.escape("&amp;"),
-//                 '<' => try self.escape("&lt;"),
-//                 '>' => try self.escape("&gt;"),
-//                 '\'' => try self.escape("&#39;"),
-//                 '"' => {
-//                     try self.append(1); // append any text before "
-//                     if (self.peek(0) == '"') {
-//                         self.advance();
-//                         self.discard(); //discard the "s
-//                         try self.appendLiteral("&quot;");
-//                     } else {
-//                         const prior_ws = self.isPriorWhitespace();
-//                         const next_ws = self.isNextWhitespace();
-//                         self.discard(); // discard the "
-
-//                         if (!self.in_literal and !next_ws) {
-//                             // start literal text
-//                             self.in_literal = true;
-//                         } else if (self.in_literal and !prior_ws) {
-//                             // end literal text
-//                             self.in_literal = false;
-//                         } else {
-//                             try self.appendLiteral("&quot;");
-//                         }
-//                     }
-//                 },
-//                 '*' => if (!self.in_literal) try self.convertTag(Tag.bold),
-//                 '_' => if (!self.in_literal) try self.convertTag(Tag.italic),
-//                 else => {},
-//             }
-//         }
-//         try self.append(0); // append any remaining text
-
-//         try self.finish(); // end of line cleanup
-//     }
 // };
