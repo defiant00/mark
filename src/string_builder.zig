@@ -40,22 +40,7 @@ pub const StringBuilder = struct {
         }
     }
 
-    fn length(self: *StringBuilder) usize {
-        var res: usize = 0;
-
-        var current = self.first;
-        while (current) |cur| : (current = cur.next) {
-            res += cur.value.len;
-        }
-
-        return res;
-    }
-
     pub fn append(self: *StringBuilder, val: []const u8) !void {
-        _ = try self.appendGet(val);
-    }
-
-    pub fn appendGet(self: *StringBuilder, val: []const u8) !*Item {
         const new = try Item.init(self.allocator, val);
         if (self.last) |l| {
             l.next = new;
@@ -63,12 +48,18 @@ pub const StringBuilder = struct {
             self.first = new;
         }
         self.last = new;
-        return new;
     }
 
-    pub fn appendLine(self: *StringBuilder, val: []const u8) !void {
-        try self.append(val);
-        try self.append("\n");
+    pub fn insert(self: *StringBuilder, prior: ?*Item, val: []const u8) !void {
+        const new = try Item.init(self.allocator, val);
+        if (prior) |p| {
+            new.next = p.next;
+            p.next = new;
+        } else {
+            new.next = self.first;
+            self.first = new;
+        }
+        if (self.last == prior) self.last = new;
     }
 
     pub fn toString(self: *StringBuilder) ![]const u8 {
@@ -90,6 +81,69 @@ pub const StringBuilder = struct {
         while (current) |cur| : (current = cur.next) {
             try writer.writeAll(cur.value);
         }
+    }
+
+    fn length(self: *StringBuilder) usize {
+        var res: usize = 0;
+
+        var current = self.first;
+        while (current) |cur| : (current = cur.next) {
+            res += cur.value.len;
+        }
+
+        return res;
+    }
+
+    test "insert" {
+        var sb = StringBuilder.init(std.testing.allocator);
+        defer sb.deinit();
+
+        try sb.insert(null, "a");
+
+        std.debug.assert(std.mem.eql(u8, sb.first.?.value, "a"));
+        std.debug.assert(std.mem.eql(u8, sb.last.?.value, "a"));
+    }
+
+    test "insert first" {
+        var sb = StringBuilder.init(std.testing.allocator);
+        defer sb.deinit();
+
+        try sb.insert(null, "c");
+        try sb.insert(null, "b");
+        try sb.insert(null, "a");
+
+        std.debug.assert(std.mem.eql(u8, sb.first.?.value, "a"));
+        std.debug.assert(std.mem.eql(u8, sb.first.?.next.?.value, "b"));
+        std.debug.assert(std.mem.eql(u8, sb.first.?.next.?.next.?.value, "c"));
+        std.debug.assert(std.mem.eql(u8, sb.last.?.value, "c"));
+    }
+
+    test "insert last" {
+        var sb = StringBuilder.init(std.testing.allocator);
+        defer sb.deinit();
+
+        try sb.insert(sb.last, "a");
+        try sb.insert(sb.last, "b");
+        try sb.insert(sb.last, "c");
+
+        std.debug.assert(std.mem.eql(u8, sb.first.?.value, "a"));
+        std.debug.assert(std.mem.eql(u8, sb.first.?.next.?.value, "b"));
+        std.debug.assert(std.mem.eql(u8, sb.first.?.next.?.next.?.value, "c"));
+        std.debug.assert(std.mem.eql(u8, sb.last.?.value, "c"));
+    }
+
+    test "insert mixed" {
+        var sb = StringBuilder.init(std.testing.allocator);
+        defer sb.deinit();
+
+        try sb.append("a");
+        try sb.insert(sb.last, "b");
+        try sb.append("c");
+
+        std.debug.assert(std.mem.eql(u8, sb.first.?.value, "a"));
+        std.debug.assert(std.mem.eql(u8, sb.first.?.next.?.value, "b"));
+        std.debug.assert(std.mem.eql(u8, sb.first.?.next.?.next.?.value, "c"));
+        std.debug.assert(std.mem.eql(u8, sb.last.?.value, "c"));
     }
 
     test "length" {
@@ -115,34 +169,9 @@ pub const StringBuilder = struct {
 
         try sb.append("");
         try sb.append("123");
-        var item = try sb.appendGet("x");
-        item.value = "";
+        try sb.append("");
 
         std.debug.assert(sb.length() == 3);
-    }
-
-    test "length with newlines" {
-        var sb = StringBuilder.init(std.testing.allocator);
-        defer sb.deinit();
-
-        try sb.appendLine("123");
-        try sb.appendLine("45");
-        try sb.append("6789");
-
-        std.debug.assert(sb.length() == 11);
-    }
-
-    test "length with replaced item" {
-        var sb = StringBuilder.init(std.testing.allocator);
-        defer sb.deinit();
-
-        try sb.append("123");
-        var item = try sb.appendGet("456");
-        try sb.append("789");
-
-        item.value = "x";
-
-        std.debug.assert(sb.length() == 7);
     }
 
     test "toString" {
@@ -175,43 +204,12 @@ pub const StringBuilder = struct {
 
         try sb.append("");
         try sb.append("123");
-        var item = try sb.appendGet("x");
-        item.value = "";
+        try sb.append("");
 
         const str = try sb.toString();
         defer sb.allocator.free(str);
 
         std.debug.assert(std.mem.eql(u8, str, "123"));
-    }
-
-    test "toString with newlines" {
-        var sb = StringBuilder.init(std.testing.allocator);
-        defer sb.deinit();
-
-        try sb.appendLine("123");
-        try sb.appendLine("45");
-        try sb.append("6789");
-
-        const str = try sb.toString();
-        defer sb.allocator.free(str);
-
-        std.debug.assert(std.mem.eql(u8, str, "123\n45\n6789"));
-    }
-
-    test "toString with replaced item" {
-        var sb = StringBuilder.init(std.testing.allocator);
-        defer sb.deinit();
-
-        try sb.append("123");
-        var item = try sb.appendGet("456");
-        try sb.append("789");
-
-        item.value = "x";
-
-        const str = try sb.toString();
-        defer sb.allocator.free(str);
-
-        std.debug.assert(std.mem.eql(u8, str, "123x789"));
     }
 
     test "write" {
@@ -246,45 +244,12 @@ pub const StringBuilder = struct {
 
         try sb.append("");
         try sb.append("123");
-        var item = try sb.appendGet("x");
-        item.value = "";
+        try sb.append("");
 
         var list = std.ArrayList(u8).init(sb.allocator);
         defer list.deinit();
         try sb.write(list.writer());
 
         std.debug.assert(std.mem.eql(u8, list.items, "123"));
-    }
-
-    test "write with newlines" {
-        var sb = StringBuilder.init(std.testing.allocator);
-        defer sb.deinit();
-
-        try sb.appendLine("123");
-        try sb.appendLine("45");
-        try sb.append("6789");
-
-        var list = std.ArrayList(u8).init(sb.allocator);
-        defer list.deinit();
-        try sb.write(list.writer());
-
-        std.debug.assert(std.mem.eql(u8, list.items, "123\n45\n6789"));
-    }
-
-    test "write with replaced item" {
-        var sb = StringBuilder.init(std.testing.allocator);
-        defer sb.deinit();
-
-        try sb.append("123");
-        var item = try sb.appendGet("456");
-        try sb.append("789");
-
-        item.value = "x";
-
-        var list = std.ArrayList(u8).init(sb.allocator);
-        defer list.deinit();
-        try sb.write(list.writer());
-
-        std.debug.assert(std.mem.eql(u8, list.items, "123x789"));
     }
 };

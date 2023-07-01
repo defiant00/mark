@@ -30,10 +30,14 @@ pub const Converter = struct {
     };
 
     builder: *StringBuilder,
+    line_start_item: ?*StringBuilder.Item,
+
+    in_paragraph: bool,
 
     source: []const u8,
     start_index: usize,
     current_index: usize,
+    trim_index: usize,
     prior_char: u21,
 
     in_literal: bool,
@@ -43,10 +47,14 @@ pub const Converter = struct {
     pub fn init(builder: *StringBuilder) Converter {
         return .{
             .builder = builder,
+            .line_start_item = null,
+
+            .in_paragraph = false,
 
             .source = "",
             .start_index = 0,
             .current_index = 0,
+            .trim_index = 0,
             .prior_char = 0,
 
             .in_literal = false,
@@ -56,9 +64,12 @@ pub const Converter = struct {
     }
 
     pub fn convert(self: *Converter, source: []const u8) !void {
+        self.line_start_item = self.builder.last;
+
         self.source = source;
         self.start_index = 0;
         self.current_index = 0;
+        self.trim_index = 0;
         self.prior_char = 0;
 
         self.in_literal = false;
@@ -72,6 +83,7 @@ pub const Converter = struct {
                 '\'' => try self.escape("&#39;"),
                 '"' => {
                     try self.append(); // append any text before "
+                    const prior_ws = whitespace(self.prior_char);
                     try self.advance(); // accept the "
 
                     if (try self.peek() == '"') {
@@ -79,7 +91,6 @@ pub const Converter = struct {
                         self.discard(); // discard the "s
                         try self.builder.append("&quot;");
                     } else {
-                        const prior_ws = whitespace(self.prior_char);
                         const next_ws = whitespace(try self.peek());
                         self.discard(); // discard the "
 
@@ -94,31 +105,73 @@ pub const Converter = struct {
                         }
                     }
                 },
-                // '*' => if (!self.in_literal) try self.convertTag(Tag.bold),
-                // '_' => if (!self.in_literal) try self.convertTag(Tag.italic),
-                else => {
-                    try self.advance();
+                '*' => try self.convertTag(Tag.bold),
+                '_' => try self.convertTag(Tag.italic),
+                '\n' => {
+                    try self.advance(); // accept the \n
+                    try self.finishLine(); // end of line cleanup
                 },
+                else => try self.advance(),
             }
         }
-        try self.append(); // append any remaining text
-
-        // todo - eol cleanup
+        try self.finishLine(); // end of line cleanup
     }
 
     pub fn finish(self: *Converter, writer: anytype) !void {
+        if (self.in_paragraph) {
+            try self.builder.append("</p>\n");
+            self.in_paragraph = false;
+        }
         try self.builder.write(writer);
+    }
+
+    fn addTag(self: *Converter, tag: Tag) void {
+        self.tags[self.tags_length] = tag;
+        self.tags_length += 1;
     }
 
     fn advance(self: *Converter) !void {
         self.prior_char = try self.peek();
         self.current_index += try unicode.utf8ByteSequenceLength(self.source[self.current_index]);
+        if (!whitespace(self.prior_char)) self.trim_index = self.current_index;
     }
 
     fn append(self: *Converter) !void {
         if (self.current_index > self.start_index) {
             try self.builder.append(self.source[self.start_index..self.current_index]);
             self.start_index = self.current_index;
+        }
+    }
+
+    fn appendTrim(self: *Converter) !void {
+        if (self.trim_index > self.start_index) {
+            try self.builder.append(self.source[self.start_index..self.trim_index]);
+        }
+        self.start_index = self.current_index;
+    }
+
+    fn convertTag(self: *Converter, tag: Tag) !void {
+        if (self.in_literal) {
+            try self.advance();
+        } else {
+            try self.append(); // append any text before the tag
+            const prior_ws = whitespace(self.prior_char);
+            try self.advance(); // accept the tag
+
+            const next_ws = whitespace(try self.peek());
+            const in_tag = self.inTag(tag);
+
+            if (!in_tag and !next_ws) {
+                // start tag
+                self.discard();
+                try self.builder.append(tag.start());
+                self.addTag(tag);
+            } else if (in_tag and !prior_ws) {
+                // end tag
+                self.discard();
+                try self.builder.append(tag.end());
+                self.removeTag(tag);
+            }
         }
     }
 
@@ -133,6 +186,42 @@ pub const Converter = struct {
         try self.builder.append(literal);
     }
 
+    fn finishLine(self: *Converter) !void {
+        try self.appendTrim();
+
+        // tags
+        var i = self.tags_length;
+        while (i > 0) : (i -= 1) {
+            try self.builder.append(self.tags[i - 1].end());
+        }
+        self.tags_length = 0;
+
+        // paragraphs and line breaks
+        if (self.line_start_item == self.builder.last) {
+            // empty line
+            if (self.in_paragraph) {
+                try self.builder.append("</p>\n");
+            }
+            self.in_paragraph = false;
+        } else {
+            if (self.in_paragraph) {
+                try self.builder.insert(self.line_start_item, "<br />");
+            } else {
+                try self.builder.insert(self.line_start_item, "<p>");
+            }
+            self.in_paragraph = true;
+        }
+
+        self.line_start_item = self.builder.last;
+    }
+
+    fn inTag(self: Converter, tag: Tag) bool {
+        for (0..self.tags_length) |i| {
+            if (self.tags[i] == tag) return true;
+        }
+        return false;
+    }
+
     fn more(self: Converter) bool {
         return self.current_index < self.source.len;
     }
@@ -145,6 +234,18 @@ pub const Converter = struct {
         return 0;
     }
 
+    fn removeTag(self: *Converter, tag: Tag) void {
+        for (0..self.tags_length) |i| {
+            if (self.tags[i] == tag) {
+                for (i + 1..self.tags_length) |j| {
+                    self.tags[j - 1] = self.tags[j];
+                }
+                self.tags_length -= 1;
+                return;
+            }
+        }
+    }
+
     fn whitespace(c: u21) bool {
         return switch (c) {
             ' ', '\t', '\r', '\n', 0 => true,
@@ -152,118 +253,3 @@ pub const Converter = struct {
         };
     }
 };
-
-// pub const Converter = struct {
-//     in_paragraph: bool = false,
-
-//     fn convert(self: *Converter) !void {
-//         var val = self.source;
-
-//         if (std.mem.indexOfScalar(u8, self.source, '\n')) |lf_index| {
-//             val = self.source[0..lf_index];
-//             self.source = self.source[lf_index + 1 ..];
-//         } else {
-//             self.source = "";
-//         }
-//         val = std.mem.trimRight(u8, val, &[_]u8{ ' ', '\t', '\r' });
-
-//         if (val.len > 0) {
-//             if (self.in_paragraph) {
-//                 try self.builder.append("<br />");
-//             } else {
-//                 try self.builder.append("<p>");
-//             }
-//             try self.convertLine(val);
-//             self.in_paragraph = true;
-//         } else {
-//             if (self.in_paragraph) {
-//                 try self.builder.appendLine("</p>");
-//             }
-//             self.in_paragraph = false;
-//         }
-//     }
-
-//     fn finish(self: *Converter) !void {
-//         if (self.in_paragraph) {
-//             try self.builder.appendLine("</p>");
-//             self.in_paragraph = false;
-//         }
-//     }
-
-//     fn convertLine(self: *Converter, line: []const u8) !void {
-//         var line_conv = LineConverter.init(self, line);
-//         defer line_conv.deinit();
-
-//         try line_conv.convert();
-//     }
-
-//     pub fn convertAll(alloc: Allocator, source: []const u8, writer: anytype) !void {
-//         var sb = StringBuilder.init(alloc);
-//         defer sb.deinit();
-
-//         var conv = init(source, &sb);
-//         defer conv.deinit();
-
-//         while (!conv.isAtEnd()) {
-//             try conv.convert();
-//         }
-
-//         try conv.finish(); // end of document cleanup
-
-//         try sb.write(writer);
-//     }
-// };
-
-// const LineConverter = struct {
-
-//     fn inTag(self: LineConverter, tag: Tag) bool {
-//         for (0..self.tags_length) |i| {
-//             if (self.tags[i] == tag) return true;
-//         }
-//         return false;
-//     }
-
-//     fn addTag(self: *LineConverter, tag: Tag) void {
-//         self.tags[self.tags_length] = tag;
-//         self.tags_length += 1;
-//     }
-
-//     fn removeTag(self: *LineConverter, tag: Tag) void {
-//         for (0..self.tags_length) |i| {
-//             if (self.tags[i] == tag) {
-//                 for (i + 1..self.tags_length) |j| {
-//                     self.tags[j - 1] = self.tags[j];
-//                 }
-//                 self.tags_length -= 1;
-//                 return;
-//             }
-//         }
-//     }
-
-//     fn convertTag(self: *LineConverter, tag: Tag) !void {
-//         try self.append(1); // append any text before the tag
-//         const prior_ws = self.isPriorWhitespace();
-//         const next_ws = self.isNextWhitespace();
-//         const in_tag = self.inTag(tag);
-
-//         if (!in_tag and !next_ws) {
-//             // start tag
-//             self.discard();
-//             try self.appendLiteral(tag.start());
-//             self.addTag(tag);
-//         } else if (in_tag and !prior_ws) {
-//             // end tag
-//             self.discard();
-//             try self.appendLiteral(tag.end());
-//             self.removeTag(tag);
-//         }
-//     }
-
-//     fn finish(self: *LineConverter) !void {
-//         var i = self.tags_length;
-//         while (i > 0) : (i -= 1) {
-//             try self.appendLiteral(self.tags[i - 1].end());
-//         }
-//     }
-
-// };
