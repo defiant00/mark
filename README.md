@@ -1,6 +1,6 @@
 # mark
 
-Implemented in [Zig](https://ziglang.org/), last compiled with 0.11.0-dev.3348+3faf376b0.
+Implemented in [Zig](https://ziglang.org/), last compiled with 0.11.0-dev.4004+a57608217.
 
 * `*text*` **bold**
 * `_text_` _italics_

@@ -41,7 +41,7 @@ pub const Converter = struct {
     prior_char: u21,
 
     in_literal: bool,
-    tags: [@enumToInt(Tag.count)]Tag,
+    tags: [@intFromEnum(Tag.count)]Tag,
     tags_length: usize,
 
     pub fn init(builder: *StringBuilder) Converter {
